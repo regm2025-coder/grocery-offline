@@ -73,34 +73,15 @@ tfoot td{font-weight:800}
 #scan{position:fixed;inset:0;background:#000;z-index:50;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px}#scan video{width:100%;max-height:70%;object-fit:cover}
 .hide{display:none!important}
 </style>
-<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
 </head>
 <body>
 <div class="wrap">
 <header>
   <h1>كاشير البقالة <small id="st" style="font-size:13px;font-weight:500;color:var(--mute)"></small></h1>
-  <div style="display:flex;gap:8px;align-items:center"><div class="tabs hide" id="tabsbar"><button id="t1" class="on">البيع</button><button id="t2">المخزون</button><button id="t3">التقارير</button></div><button class="ghost hide" id="out">خروج</button></div>
+  <div style="display:flex;gap:8px;align-items:center"><div class="tabs" id="tabsbar"><button id="t1" class="on">البيع</button><button id="t2">المخزون</button><button id="t3">التقارير</button></div><button class="ghost" id="out">👤 البائع</button></div>
 </header>
 
-<section id="gate" class="panel" style="max-width:420px;margin:20px auto">
-  <div id="setup" class="hide">
-    <h2>إعداد الاتصال (مرة واحدة)</h2>
-    <p class="range">الصق إعدادات Firebase هنا (الكود اللي يبدأ بـ const firebaseConfig)</p>
-    <textarea id="cfg" rows="9" dir="ltr" style="width:100%;font:13px monospace;background:var(--bg);color:var(--ink);border:1px solid var(--line);border-radius:10px;padding:8px"></textarea>
-    <button class="btn" id="cfgb" style="margin-top:10px">حفظ</button>
-  </div>
-  <div id="login" class="hide">
-    <h2>تسجيل الدخول</h2>
-    <label>الإيميل<input type="email" id="em" dir="ltr" autocomplete="username"></label>
-    <label style="margin-top:8px">كلمة السر<input type="password" id="pw" dir="ltr" autocomplete="current-password"></label>
-    <button class="btn" id="lg" style="margin-top:12px">دخول</button>
-    <p id="lerr" class="low"></p>
-    <button class="ghost" id="rc" style="margin-top:6px">تغيير إعدادات الاتصال</button>
-  </div>
-</section>
-<section id="sell" class="grid hide">
+<section id="sell" class="grid">
   <div class="panel"><h2>المنتجات <small style="color:var(--mute);font-weight:400">(اضغط على المنتج لإضافته)</small></h2><div style="display:flex;gap:6px;margin-bottom:10px"><input type="text" id="codein" dir="ltr" placeholder="امسح الباركود أو اكتب الكود ثم Enter" autocomplete="off"><button class="ghost" id="camb" style="white-space:nowrap">📷 كاميرا</button></div>
     <div class="prods" id="prods"></div></div>
   <div class="panel">
@@ -113,6 +94,10 @@ tfoot td{font-weight:800}
 </section>
 
 <section id="inv" class="panel hide">
+  <h2>النسخة الاحتياطية</h2>
+  <p class="range" style="margin:0 0 8px">بياناتك محفوظة على هذا الجهاز فقط. خذ نسخة احتياطية بشكل دوري واحفظها في مكان ثاني.</p>
+  <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:4px"><button class="ghost" id="bexp">⬇ حفظ نسخة احتياطية</button><button class="ghost" id="bimp">⬆ استرجاع نسخة</button><input type="file" id="bfile" accept=".json,application/json" class="hide"></div>
+  <p class="range" id="bnote" style="margin:0 0 16px"></p>
   <h2>إضافة صنف جديد</h2>
   <div class="add">
     <label>اسم الصنف<input type="text" id="pn" placeholder="مثال: كيس رز"></label>
@@ -150,38 +135,31 @@ tfoot td{font-weight:800}
 <div class="toast" id="toast"></div>
 
 <script>
-// ضع إعدادات Firebase هنا بدل null (أو الصقها داخل التطبيق عند أول تشغيل)
-const EMBEDDED_CONFIG = {
-  apiKey: "AIzaSyAOBYV2K_1QpJjhFurGzLRrUK-Py2w21Zk",
-  authDomain: "grocery-f7838.firebaseapp.com",
-  projectId: "grocery-f7838",
-  storageBucket: "grocery-f7838.firebasestorage.app",
-  messagingSenderId: "1021722496996",
-  appId: "1:1021722496996:web:93cd50dbdd08d3deeac1f1"
-};
-/* مثال:
-const EMBEDDED_CONFIG = { apiKey:"...", authDomain:"...", projectId:"...", storageBucket:"...", messagingSenderId:"...", appId:"..." };
-*/
 const $=id=>document.getElementById(id);
 function load(k,d){try{const v=localStorage.getItem(k);return v?JSON.parse(v):d}catch(e){return d}}
 function save(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}}
-let auth=null,fs=null,uid='',me='',prods=[],days={},cart={},tabNo=1,wq=Promise.resolve(),unsubs=[];
+let me=load('seller',''),prods=[],days={},cart={},tabNo=1;
 const fmt=n=>(Math.round(n*100)/100).toLocaleString('en-US');
 const dayKey=d=>{const x=new Date(d);return x.getFullYear()+'-'+String(x.getMonth()+1).padStart(2,'0')+'-'+String(x.getDate()).padStart(2,'0')};
 const nid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,5);
 function toast(m){const t=$('toast');t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),2200)}
-function fail(e){toast(e&&e.code==='permission-denied'?'ما عندك صلاحية الحفظ، تأكد من قواعد Firestore':'تعذر الحفظ، تأكد من الإنترنت')}
 const allInv=()=>Object.values(days).flat();
-const W=f=>{wq=wq.then(f).catch(fail)};
+let idb=null;
+const noDb=()=>Promise.reject(new Error('nodb'));
+function openDB(){return new Promise((res,rej)=>{const r=indexedDB.open('grocery',1);r.onupgradeneeded=()=>r.result.createObjectStore('kv');r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error)})}
+function dbSet(k,v){if(!idb)return noDb();return new Promise((res,rej)=>{const t=idb.transaction('kv','readwrite');t.objectStore('kv').put(v,k);t.oncomplete=()=>res();t.onerror=()=>rej(t.error)})}
+function dbClear(){if(!idb)return noDb();return new Promise((res,rej)=>{const t=idb.transaction('kv','readwrite');t.objectStore('kv').clear();t.oncomplete=()=>res();t.onerror=()=>rej(t.error)})}
+function dbAll(){return new Promise((res,rej)=>{const out={};const q=idb.transaction('kv').objectStore('kv').openCursor();q.onsuccess=e=>{const c=e.target.result;if(c){out[c.key]=c.value;c.continue()}else res(out)};q.onerror=()=>rej(q.error)})}
+const saveFail=()=>toast('تعذر الحفظ على الجهاز، تأكد من مساحة التخزين');
 
 function stockMap(){
   const pm={},m={};prods.forEach(p=>{pm[p.id]=p;m[p.id]=+p.base||0});
   allInv().forEach(v=>v.items.forEach(i=>{const p=pm[i.pid];if(p&&v.t>=(p.since||0))m[p.id]-=i.q}));
   return m;
 }
-function putP(p){const i=prods.findIndex(x=>x.id===p.id);if(i<0)prods.push(p);else prods[i]=p;W(()=>fs.doc('products/'+p.id).set(p))}
-function delP(id){prods=prods.filter(x=>x.id!==id);W(()=>fs.doc('products/'+id).delete())}
-function addInv(inv){const k=dayKey(inv.t)+'_'+uid;(days[k]||(days[k]=[])).push(inv);W(()=>fs.doc('days/'+k).set({invoices:days[k]}))}
+function putP(p){const i=prods.findIndex(x=>x.id===p.id);if(i<0)prods.push(p);else prods[i]=p;dbSet('products',prods).catch(saveFail)}
+function delP(id){prods=prods.filter(x=>x.id!==id);dbSet('products',prods).catch(saveFail)}
+function addInv(inv){const k='day:'+dayKey(inv.t);(days[k]||(days[k]=[])).push(inv);dbSet(k,days[k]).catch(saveFail)}
 
 function addToCart(p){
   if((cart[p.id]||0)>=stockMap()[p.id]){toast('المخزون ما يكفي: '+p.name);return false}
@@ -317,7 +295,6 @@ function drawRep(){
   $('re').classList.toggle('hide',rows.length>0);
 }
 function refresh(){
-  if(!uid)return;
   drawProds();drawCart();
   const typing=document.activeElement&&document.activeElement.closest&&document.activeElement.closest('#inv');
   if(tabNo===2&&!typing)drawInv();
@@ -358,47 +335,38 @@ $('camb').onclick=()=>openScan(c=>{handleCode(c);return true});
 $('pscan').onclick=()=>openScan(c=>{$('pcode').value=String(c).trim();beep(true);return false});
 $('codein').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();handleCode($('codein').value);$('codein').value=''}});
 
-function showGate(which){
-  ['sell','inv','rep'].forEach(id=>$(id).classList.add('hide'));
-  $('tabsbar').classList.add('hide');$('out').classList.add('hide');$('st').textContent='';
-  $('gate').classList.remove('hide');
-  $('setup').classList.toggle('hide',which!=='setup');$('login').classList.toggle('hide',which!=='login');
-}
-function subscribe(){
-  unsubs.push(fs.collection('products').onSnapshot(s=>{prods=s.docs.map(d=>d.data()).filter(p=>p&&p.id).sort((a,b)=>(a.since||0)-(b.since||0));refresh()},fail));
-  unsubs.push(fs.collection('days').onSnapshot(s=>{days={};s.docs.forEach(d=>{days[d.id]=(d.data().invoices)||[]});refresh()},fail));
-}
-function start(cfg){
-  if(typeof firebase==='undefined'){showGate('login');$('lerr').textContent='تعذر تحميل Firebase، تأكد من الإنترنت';return}
-  try{firebase.initializeApp(cfg)}catch(e){}
-  auth=firebase.auth();fs=firebase.firestore();
-  auth.onAuthStateChanged(u=>{
-    if(u){
-      uid=u.uid;me=(u.email||'').split('@')[0];
-      $('gate').classList.add('hide');$('tabsbar').classList.remove('hide');$('out').classList.remove('hide');
-      $('st').textContent='● '+me;subscribe();tab(1);
-    }else{
-      unsubs.forEach(f=>f());unsubs=[];uid='';prods=[];days={};cart={};showGate('login');
-    }
-  });
-}
-$('lg').onclick=()=>{
-  $('lerr').textContent='';
-  auth.signInWithEmailAndPassword($('em').value.trim(),$('pw').value).catch(()=>{$('lerr').textContent='الإيميل أو كلمة السر غير صحيحة'});
+function showSeller(){$('out').textContent='👤 '+(me||'البائع')}
+function showBackupNote(){const t=load('lastBackup','');$('bnote').textContent=t?'آخر نسخة احتياطية: '+t:'ما أخذت نسخة احتياطية بعد'}
+$('out').onclick=()=>{const n=prompt('اسم البائع (يظهر في الفواتير):',me||'');if(n!==null){me=n.trim();save('seller',me);showSeller()}};
+$('bexp').onclick=()=>{
+  const blob=new Blob([JSON.stringify({v:1,products:prods,days})],{type:'application/json'});
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='grocery-backup-'+dayKey(Date.now())+'.json';
+  document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),3000);
+  save('lastBackup',new Date().toLocaleString('ar'));showBackupNote();toast('تم حفظ النسخة الاحتياطية');
 };
-$('pw').addEventListener('keydown',e=>{if(e.key==='Enter')$('lg').click()});
-$('out').onclick=()=>auth.signOut();
-$('rc').onclick=()=>showGate('setup');
-$('cfgb').onclick=()=>{
-  const t=$('cfg').value;const a=t.indexOf('{'),b=t.lastIndexOf('}');
+$('bimp').onclick=()=>$('bfile').click();
+$('bfile').onchange=async()=>{
+  const f=$('bfile').files[0];$('bfile').value='';if(!f)return;
   try{
-    const c=new Function('return ('+t.slice(a,b+1)+')')();
-    if(!c.apiKey||!c.projectId)throw 0;
-    save('fb_cfg',c);location.reload();
-  }catch(e){toast('الإعدادات غير صحيحة، انسخها كاملة من Firebase')}
+    const d=JSON.parse(await f.text());
+    if(!Array.isArray(d.products)||!d.days||typeof d.days!=='object')throw 0;
+    if(!confirm('سيتم استبدال كل بيانات هذا الجهاز بالنسخة المختارة. متأكد؟'))return;
+    await dbClear();prods=d.products;days={};
+    await dbSet('products',prods);
+    for(const k of Object.keys(d.days)){if(k.startsWith('day:')&&Array.isArray(d.days[k])){days[k]=d.days[k];await dbSet(k,days[k])}}
+    cart={};refresh();toast('تم استرجاع النسخة ✓');
+  }catch(e){toast('الملف غير صالح أو تعذر الاسترجاع')}
 };
-const CFG=EMBEDDED_CONFIG||load('fb_cfg',null);
-if(CFG)start(CFG);else showGate('setup');
+(async function(){
+  try{
+    idb=await openDB();const all=await dbAll();
+    prods=Array.isArray(all.products)?all.products:[];
+    Object.keys(all).forEach(k=>{if(k.startsWith('day:'))days[k]=all[k]});
+  }catch(e){toast('تعذر فتح التخزين على الجهاز')}
+  try{if(navigator.storage&&navigator.storage.persist)navigator.storage.persist()}catch(e){}
+  $('st').textContent='● يعمل بدون إنترنت';
+  showSeller();showBackupNote();tab(1);
+})();
 if('serviceWorker' in navigator)window.addEventListener('load',()=>navigator.serviceWorker.register('sw.js').catch(()=>{}));
 </script>
 </body>
